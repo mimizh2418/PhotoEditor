@@ -1,15 +1,22 @@
 import javax.imageio.ImageIO;
 import javax.swing.*;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 
 public class PhotoEditor {
+    public static final int DEFAULT_BRUSH_SIZE = 10;
+    public static final Color DEFAULT_DRAW_COLOR = Color.BLACK;
+
     private BufferedImage image;
     private final JFrame mainFrame = new JFrame("Photo Editor - Macrohard Draw");
     private final PhotoCanvas canvas = new PhotoCanvas(500, 500);
     private final JFileChooser chooser = new JFileChooser();
+    private int drawSize = DEFAULT_BRUSH_SIZE;
+    Color drawColor = DEFAULT_DRAW_COLOR;
 
     public PhotoEditor() {
         mainFrame.setLayout(new BorderLayout());
@@ -21,10 +28,13 @@ public class PhotoEditor {
     }
 
     class PhotoCanvas extends ImageCanvas {
-        private int imageWidth, imageHeight, imageX, imageY;
+        int imageWidth, imageHeight, imageX, imageY;
 
         public PhotoCanvas(int width, int height) {
             super(width, height);
+            ScribbleMouseListener listener = new ScribbleMouseListener();
+            addMouseListener(listener);
+            addMouseMotionListener(listener);
         }
 
         private void calculateImageSize() {
@@ -48,30 +58,60 @@ public class PhotoEditor {
             super.paintComponent(g);
             if (image != null) {
                 calculateImageSize();
-                g.drawImage(image, imageX, imageY, imageWidth, imageHeight, null); // TODO: 2/28/2023 Config draw position
+                g.drawImage(image, imageX, imageY, imageWidth, imageHeight, null);
             }
         }
 
         class ScribbleMouseListener implements MouseListener, MouseMotionListener {
+            private Point prev;
+
+            private Point actualToImageCoords(Point actual) {
+                int x = actual.x;
+                int y = actual.y;
+                double scale = ((double) image.getWidth()) / ((double) imageWidth);
+                if (x < imageX || x > imageX + imageWidth || y < imageY || y > imageY + imageHeight) return null;
+                return new Point((int) ((x - imageX) * scale), (int) ((y - imageY) * scale));
+            }
 
             @Override
             public void mouseClicked(MouseEvent e) {
+                Point imageCoords = actualToImageCoords(e.getPoint());
+                if (image != null && imageCoords != null) {
+                    Graphics2D imageGraphics = image.createGraphics();
+                    imageGraphics.setColor(drawColor);
+                    imageGraphics.fillOval(imageCoords.x, imageCoords.y, drawSize, drawSize);
+                    repaint();
+                }
             }
 
             @Override
             public void mousePressed(MouseEvent e) {}
 
             @Override
-            public void mouseReleased(MouseEvent e) {}
+            public void mouseReleased(MouseEvent e) {
+                prev = null;
+            }
 
             @Override
             public void mouseEntered(MouseEvent e) {}
 
             @Override
-            public void mouseExited(MouseEvent e) {}
+            public void mouseExited(MouseEvent e) {
+                prev = null;
+            }
 
             @Override
-            public void mouseDragged(MouseEvent e) {}
+            public void mouseDragged(MouseEvent e) {
+                Point imageCoords = actualToImageCoords(e.getPoint());
+                if (image != null && imageCoords != null && prev != null) {
+                    Graphics2D imageGraphics = image.createGraphics();
+                    imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    imageGraphics.setColor(drawColor);
+                    imageGraphics.drawLine(imageCoords.x, imageCoords.y, prev.x, prev.y);
+                    prev = imageCoords;
+                    repaint();
+                } else prev = e.getPoint();
+            }
 
             @Override
             public void mouseMoved(MouseEvent e) {}
@@ -87,8 +127,48 @@ public class PhotoEditor {
             add(new OpenFileButton());
             add(new NewFileButton());
             add(new SaveFileButton());
+            add(new BrushSizeChooserPanel());
+            add(new BrushColorChooserButton());
 
             add(Box.createGlue());
+        }
+    }
+
+    class BrushSizeChooserPanel extends JPanel {
+        private final JLabel sliderLabel = new JLabel("Brush size: " + DEFAULT_BRUSH_SIZE);
+
+        public BrushSizeChooserPanel() {
+            setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+            add(sliderLabel);
+            add(new BrushSizeChooser());
+        }
+
+        class BrushSizeChooser extends JSlider implements ChangeListener {
+            public BrushSizeChooser() {
+                super(0, 30, DEFAULT_BRUSH_SIZE);
+                setPaintLabels(true);
+                setMajorTickSpacing(5);
+                addChangeListener(this);
+            }
+
+            @Override
+            public synchronized void stateChanged(ChangeEvent e) {
+                drawSize = getValue();
+                sliderLabel.setText("Brush size: " + drawSize);
+            }
+        }
+    }
+
+    class BrushColorChooserButton extends JButton implements ActionListener {
+        public BrushColorChooserButton() {
+            super("Change color");
+            addActionListener(this);
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            Color selectedColor = JColorChooser.showDialog(mainFrame, "Select pen color", DEFAULT_DRAW_COLOR);
+            if (selectedColor != null) drawColor = selectedColor;
         }
     }
 
@@ -125,6 +205,9 @@ public class PhotoEditor {
                 image = new BufferedImage(
                         (int) sizeInput.widthInput.getValue(), (int) sizeInput.heightInput.getValue(), BufferedImage.TYPE_INT_RGB
                 );
+                Graphics2D imageGraphics = image.createGraphics();
+                imageGraphics.setColor(Color.WHITE);
+                imageGraphics.fillRect(0, 0, image.getWidth(), image.getHeight());
                 canvas.repaint();
             }
         }
@@ -171,7 +254,7 @@ public class PhotoEditor {
             }
         }
     }
-    
+
     public static void main(String[] args) {
         new PhotoEditor();
     }
