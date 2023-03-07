@@ -5,26 +5,91 @@ import javax.swing.event.ChangeListener;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
+import java.io.File;
 import java.io.IOException;
+import java.util.Stack;
 
 public class PhotoEditor {
     public static final int DEFAULT_BRUSH_SIZE = 10;
     public static final Color DEFAULT_DRAW_COLOR = Color.BLACK;
 
+    private final Stack<BufferedImage> undoStack = new Stack<>();
+    private final Stack<BufferedImage> redoStack = new Stack<>();
+
     private BufferedImage image;
     private final JFrame mainFrame = new JFrame("Photo Editor - Macrohard Draw");
-    private final PhotoCanvas canvas = new PhotoCanvas(500, 500);
+    private final PhotoCanvas canvas = new PhotoCanvas(750, 750);
     private final JFileChooser chooser = new JFileChooser();
+
     private int drawSize = DEFAULT_BRUSH_SIZE;
-    Color drawColor = DEFAULT_DRAW_COLOR;
+    private Color drawColor = DEFAULT_DRAW_COLOR;
+
+
 
     public PhotoEditor() {
         mainFrame.setLayout(new BorderLayout());
         mainFrame.add(new ControlPanel(), BorderLayout.WEST);
         mainFrame.add(canvas, BorderLayout.CENTER);
+        mainFrame.setJMenuBar(new EditorMenuBar());
         mainFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         mainFrame.pack();
         mainFrame.setVisible(true);
+    }
+
+    public void newImage(int width, int height) {
+        image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D imageGraphics = image.createGraphics();
+        imageGraphics.setColor(Color.WHITE);
+        imageGraphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+        undoStack.clear();
+        redoStack.clear();
+        updateHistory();
+        if (canvas != null) canvas.repaint();
+    }
+
+    public void newImage(File file) {
+        try {
+            image = ImageIO.read(file);
+            undoStack.clear();
+            redoStack.clear();
+            updateHistory();
+            if (canvas != null) canvas.repaint();
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(mainFrame, "ERROR: " + ex.getMessage());
+        }
+    }
+
+    public BufferedImage copyImage(BufferedImage image) {
+        return new BufferedImage(image.getColorModel(), image.copyData(null), image.getColorModel().isAlphaPremultiplied(), null);
+    }
+
+    public void updateHistory() {
+        if (image != null) {
+            if (!redoStack.isEmpty()) redoStack.clear();
+            undoStack.push(copyImage(image));
+        }
+    }
+
+    public void undo() {
+        if (image != null) {
+            if (undoStack.size() > 1) {
+                BufferedImage newImage = undoStack.pop();
+                redoStack.push(copyImage(newImage));
+                image = copyImage(undoStack.get(undoStack.size() - 1));
+                canvas.repaint();
+            }
+        }
+    }
+
+    public void redo() {
+        if (image != null) {
+            if (redoStack.size() > 0) {
+                BufferedImage newImage = redoStack.pop();
+                undoStack.push(copyImage(newImage));
+                image = copyImage(undoStack.get(undoStack.size() - 1));
+                canvas.repaint();
+            }
+        }
     }
 
     class PhotoCanvas extends ImageCanvas {
@@ -32,6 +97,7 @@ public class PhotoEditor {
 
         public PhotoCanvas(int width, int height) {
             super(width, height);
+            newImage(width, height);
             ScribbleMouseListener listener = new ScribbleMouseListener();
             addMouseListener(listener);
             addMouseMotionListener(listener);
@@ -64,13 +130,20 @@ public class PhotoEditor {
 
         class ScribbleMouseListener implements MouseListener, MouseMotionListener {
             private Point prev;
+            private boolean isHeld;
 
             private Point actualToImageCoords(Point actual) {
+                if (image == null) return null;
                 int x = actual.x;
                 int y = actual.y;
                 double scale = ((double) image.getWidth()) / ((double) imageWidth);
                 if (x < imageX || x > imageX + imageWidth || y < imageY || y > imageY + imageHeight) return null;
                 return new Point((int) ((x - imageX) * scale), (int) ((y - imageY) * scale));
+            }
+
+            private void completeStroke() {
+                prev = null;
+                updateHistory();
             }
 
             @Override
@@ -79,17 +152,21 @@ public class PhotoEditor {
                 if (image != null && imageCoords != null) {
                     Graphics2D imageGraphics = image.createGraphics();
                     imageGraphics.setColor(drawColor);
-                    imageGraphics.fillOval(imageCoords.x, imageCoords.y, drawSize, drawSize);
+                    imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    imageGraphics.drawLine(imageCoords.x, imageCoords.y, imageCoords.x, imageCoords.y);
                     repaint();
                 }
             }
 
             @Override
-            public void mousePressed(MouseEvent e) {}
+            public void mousePressed(MouseEvent e) {
+                isHeld = true;
+            }
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                prev = null;
+                isHeld = false;
+                if (actualToImageCoords(e.getPoint()) != null) completeStroke();
             }
 
             @Override
@@ -97,7 +174,7 @@ public class PhotoEditor {
 
             @Override
             public void mouseExited(MouseEvent e) {
-                prev = null;
+                if (isHeld) completeStroke();
             }
 
             @Override
@@ -110,7 +187,7 @@ public class PhotoEditor {
                     imageGraphics.drawLine(imageCoords.x, imageCoords.y, prev.x, prev.y);
                     prev = imageCoords;
                     repaint();
-                } else prev = e.getPoint();
+                } else prev = imageCoords;
             }
 
             @Override
@@ -124,9 +201,6 @@ public class PhotoEditor {
 
             add(Box.createGlue());
 
-            add(new OpenFileButton());
-            add(new NewFileButton());
-            add(new SaveFileButton());
             add(new BrushSizeChooserPanel());
             add(new BrushColorChooserButton());
 
@@ -167,48 +241,54 @@ public class PhotoEditor {
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            Color selectedColor = JColorChooser.showDialog(mainFrame, "Select pen color", DEFAULT_DRAW_COLOR);
+            Color selectedColor = JColorChooser.showDialog(mainFrame, "Select pen color", drawColor);
             if (selectedColor != null) drawColor = selectedColor;
         }
     }
 
-    class OpenFileButton extends JButton implements ActionListener {
+    class EditorMenuBar extends JMenuBar {
+        public EditorMenuBar() {
+            JMenu fileMenu = new JMenu("File");
+            fileMenu.add(new OpenFileButton());
+            fileMenu.add(new NewFileButton());
+            fileMenu.add(new SaveFileButton());
+            add(fileMenu);
+
+            JMenu editMenu = new JMenu("Edit");
+            editMenu.add(new UndoButton());
+            editMenu.add(new RedoButton());
+            add(editMenu);
+        }
+    }
+
+    class OpenFileButton extends JMenuItem implements ActionListener {
         public OpenFileButton() {
-            super("Open file");
+            super("Open");
+            setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, InputEvent.CTRL_DOWN_MASK));
             addActionListener(this);
         }
 
         @Override
         public void actionPerformed(ActionEvent e) {
             if (chooser.showOpenDialog(mainFrame) == JFileChooser.APPROVE_OPTION) {
-                try {
-                    image = ImageIO.read(chooser.getSelectedFile());
-                    canvas.repaint();
-                } catch (IOException ex) {
-                    JOptionPane.showMessageDialog(mainFrame, "ERROR: " + ex.getMessage());
-                }
+                newImage(chooser.getSelectedFile());
             }
         }
     }
 
-    class NewFileButton extends JButton implements ActionListener {
+    class NewFileButton extends JMenuItem implements ActionListener {
         private final ImageSizeInput sizeInput = new ImageSizeInput();
 
         public NewFileButton() {
-            super("New image");
+            super("New");
+            setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_N, InputEvent.CTRL_DOWN_MASK));
             addActionListener(this);
         }
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            if (JOptionPane.showConfirmDialog(mainFrame, sizeInput, "Specify image dimensions", JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
-                image = new BufferedImage(
-                        (int) sizeInput.widthInput.getValue(), (int) sizeInput.heightInput.getValue(), BufferedImage.TYPE_INT_RGB
-                );
-                Graphics2D imageGraphics = image.createGraphics();
-                imageGraphics.setColor(Color.WHITE);
-                imageGraphics.fillRect(0, 0, image.getWidth(), image.getHeight());
-                canvas.repaint();
+            if (JOptionPane.showConfirmDialog(mainFrame, sizeInput, "New image", JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
+                newImage((int) sizeInput.widthInput.getValue(), (int) sizeInput.heightInput.getValue());
             }
         }
 
@@ -234,9 +314,10 @@ public class PhotoEditor {
         }
     }
 
-    class SaveFileButton extends JButton implements ActionListener {
+    class SaveFileButton extends JMenuItem implements ActionListener {
         public SaveFileButton() {
-            super("Save");
+            super("Save as...");
+            setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK));
             addActionListener(this);
         }
 
@@ -252,6 +333,32 @@ public class PhotoEditor {
                     JOptionPane.showMessageDialog(mainFrame, "ERROR: " + ex.getMessage());
                 }
             }
+        }
+    }
+
+    class UndoButton extends JMenuItem implements ActionListener {
+        public UndoButton() {
+            super("Undo");
+            setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK));
+            addActionListener(this);
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            undo();
+        }
+    }
+
+    class RedoButton extends JMenuItem implements ActionListener {
+        public RedoButton() {
+            super("Redo");
+            setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
+            addActionListener(this);
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            redo();
         }
     }
 
