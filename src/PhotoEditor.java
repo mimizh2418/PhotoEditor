@@ -17,6 +17,7 @@ public class PhotoEditor {
     private final Stack<BufferedImage> redoStack = new Stack<>();
 
     private BufferedImage image;
+    private Graphics2D imageGraphics;
     private final JFrame mainFrame = new JFrame("Photo Editor - Macrohard Draw");
     private final PhotoCanvas canvas = new PhotoCanvas(750, 750);
     private final JFileChooser chooser = new JFileChooser();
@@ -38,7 +39,7 @@ public class PhotoEditor {
 
     public void newImage(int width, int height) {
         image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        Graphics2D imageGraphics = image.createGraphics();
+        updateImageGraphics();
         imageGraphics.setColor(Color.WHITE);
         imageGraphics.fillRect(0, 0, image.getWidth(), image.getHeight());
         undoStack.clear();
@@ -50,6 +51,7 @@ public class PhotoEditor {
     public void newImage(File file) {
         try {
             image = ImageIO.read(file);
+            updateImageGraphics();
             undoStack.clear();
             redoStack.clear();
             updateHistory();
@@ -57,6 +59,16 @@ public class PhotoEditor {
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(mainFrame, "ERROR: " + ex.getMessage());
         }
+    }
+
+    public void setImage(BufferedImage newImage) {
+        image = copyImage(newImage);
+        updateImageGraphics();
+    }
+
+    public void updateImageGraphics() {
+        imageGraphics = image.createGraphics();
+        imageGraphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
     }
 
     public BufferedImage copyImage(BufferedImage image) {
@@ -75,7 +87,7 @@ public class PhotoEditor {
             if (undoStack.size() > 1) {
                 BufferedImage newImage = undoStack.pop();
                 redoStack.push(copyImage(newImage));
-                image = copyImage(undoStack.get(undoStack.size() - 1));
+                setImage(undoStack.get(undoStack.size() - 1));
                 canvas.repaint();
             }
         }
@@ -86,7 +98,7 @@ public class PhotoEditor {
             if (redoStack.size() > 0) {
                 BufferedImage newImage = redoStack.pop();
                 undoStack.push(copyImage(newImage));
-                image = copyImage(undoStack.get(undoStack.size() - 1));
+                setImage(undoStack.get(undoStack.size() - 1));
                 canvas.repaint();
             }
         }
@@ -150,7 +162,6 @@ public class PhotoEditor {
             public void mouseClicked(MouseEvent e) {
                 Point imageCoords = actualToImageCoords(e.getPoint());
                 if (image != null && imageCoords != null) {
-                    Graphics2D imageGraphics = image.createGraphics();
                     imageGraphics.setColor(drawColor);
                     imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                     imageGraphics.drawLine(imageCoords.x, imageCoords.y, imageCoords.x, imageCoords.y);
@@ -159,13 +170,10 @@ public class PhotoEditor {
             }
 
             @Override
-            public void mousePressed(MouseEvent e) {
-                isHeld = true;
-            }
+            public void mousePressed(MouseEvent e) {}
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                isHeld = false;
                 if (actualToImageCoords(e.getPoint()) != null) completeStroke();
             }
 
@@ -173,15 +181,12 @@ public class PhotoEditor {
             public void mouseEntered(MouseEvent e) {}
 
             @Override
-            public void mouseExited(MouseEvent e) {
-                if (isHeld) completeStroke();
-            }
+            public void mouseExited(MouseEvent e) {}
 
             @Override
             public void mouseDragged(MouseEvent e) {
                 Point imageCoords = actualToImageCoords(e.getPoint());
                 if (image != null && imageCoords != null && prev != null) {
-                    Graphics2D imageGraphics = image.createGraphics();
                     imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                     imageGraphics.setColor(drawColor);
                     imageGraphics.drawLine(imageCoords.x, imageCoords.y, prev.x, prev.y);
