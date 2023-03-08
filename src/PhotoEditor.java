@@ -25,8 +25,6 @@ public class PhotoEditor {
     private int drawSize = DEFAULT_BRUSH_SIZE;
     private Color drawColor = DEFAULT_DRAW_COLOR;
 
-
-
     public PhotoEditor() {
         mainFrame.setLayout(new BorderLayout());
         mainFrame.add(new ControlPanel(), BorderLayout.WEST);
@@ -50,11 +48,14 @@ public class PhotoEditor {
 
     public void newImage(File file) {
         try {
-            image = ImageIO.read(file);
-            updateImageGraphics();
-            undoStack.clear();
-            redoStack.clear();
-            updateHistory();
+            BufferedImage newImage = ImageIO.read(file);
+            if (newImage != null) {
+                image = ImageIO.read(file);
+                updateImageGraphics();
+                undoStack.clear();
+                redoStack.clear();
+                updateHistory();
+            } else JOptionPane.showMessageDialog(mainFrame, "Macrohard Draw cannot read this file. It is likely an unsupported file type.");
             if (canvas != null) canvas.repaint();
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(mainFrame, "ERROR: " + ex.getMessage());
@@ -62,7 +63,7 @@ public class PhotoEditor {
     }
 
     public void setImage(BufferedImage newImage) {
-        image = copyImage(newImage);
+        image = ImageUtils.copyImage(newImage);
         updateImageGraphics();
     }
 
@@ -71,14 +72,10 @@ public class PhotoEditor {
         imageGraphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
     }
 
-    public BufferedImage copyImage(BufferedImage image) {
-        return new BufferedImage(image.getColorModel(), image.copyData(null), image.getColorModel().isAlphaPremultiplied(), null);
-    }
-
     public void updateHistory() {
         if (image != null) {
             if (!redoStack.isEmpty()) redoStack.clear();
-            undoStack.push(copyImage(image));
+            undoStack.push(ImageUtils.copyImage(image));
         }
     }
 
@@ -86,7 +83,7 @@ public class PhotoEditor {
         if (image != null) {
             if (undoStack.size() > 1) {
                 BufferedImage newImage = undoStack.pop();
-                redoStack.push(copyImage(newImage));
+                redoStack.push(ImageUtils.copyImage(newImage));
                 setImage(undoStack.get(undoStack.size() - 1));
                 canvas.repaint();
             }
@@ -97,7 +94,7 @@ public class PhotoEditor {
         if (image != null) {
             if (redoStack.size() > 0) {
                 BufferedImage newImage = redoStack.pop();
-                undoStack.push(copyImage(newImage));
+                undoStack.push(ImageUtils.copyImage(newImage));
                 setImage(undoStack.get(undoStack.size() - 1));
                 canvas.repaint();
             }
@@ -142,14 +139,12 @@ public class PhotoEditor {
 
         class ScribbleMouseListener implements MouseListener, MouseMotionListener {
             private Point prev;
-            private boolean isHeld;
 
             private Point actualToImageCoords(Point actual) {
                 if (image == null) return null;
                 int x = actual.x;
                 int y = actual.y;
                 double scale = ((double) image.getWidth()) / ((double) imageWidth);
-                if (x < imageX || x > imageX + imageWidth || y < imageY || y > imageY + imageHeight) return null;
                 return new Point((int) ((x - imageX) * scale), (int) ((y - imageY) * scale));
             }
 
