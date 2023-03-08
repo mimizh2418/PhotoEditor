@@ -55,7 +55,8 @@ public class PhotoEditor {
                 undoStack.clear();
                 redoStack.clear();
                 updateHistory();
-            } else JOptionPane.showMessageDialog(mainFrame, "Macrohard Draw cannot read this file. It is likely an unsupported file type.");
+            } else
+                JOptionPane.showMessageDialog(mainFrame, "Macrohard Draw cannot read this file. It is likely an unsupported file type.");
             if (canvas != null) canvas.repaint();
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(mainFrame, "ERROR: " + ex.getMessage());
@@ -165,7 +166,8 @@ public class PhotoEditor {
             }
 
             @Override
-            public void mousePressed(MouseEvent e) {}
+            public void mousePressed(MouseEvent e) {
+            }
 
             @Override
             public void mouseReleased(MouseEvent e) {
@@ -173,10 +175,12 @@ public class PhotoEditor {
             }
 
             @Override
-            public void mouseEntered(MouseEvent e) {}
+            public void mouseEntered(MouseEvent e) {
+            }
 
             @Override
-            public void mouseExited(MouseEvent e) {}
+            public void mouseExited(MouseEvent e) {
+            }
 
             @Override
             public void mouseDragged(MouseEvent e) {
@@ -191,7 +195,8 @@ public class PhotoEditor {
             }
 
             @Override
-            public void mouseMoved(MouseEvent e) {}
+            public void mouseMoved(MouseEvent e) {
+            }
         }
     }
 
@@ -257,6 +262,17 @@ public class PhotoEditor {
             JMenu editMenu = new JMenu("Edit");
             editMenu.add(new UndoButton());
             editMenu.add(new RedoButton());
+            editMenu.addSeparator();
+            JMenu filterMenu = new JMenu("Filter image...");
+            filterMenu.add(new FilterButton("Grayscale", ImageFilterType.ColorFilterType.GRAYSCALE));
+            filterMenu.add(new FilterButton("Invert", ImageFilterType.ColorFilterType.INVERT));
+            filterMenu.add(new FilterButton("Shift colors", ImageFilterType.ColorFilterType.SHIFT));
+            JMenu colorFilterMenu = new JMenu("Filter color...");
+            colorFilterMenu.add(new FilterButton("Red", ImageFilterType.ColorFilterType.REMOVE_RED));
+            colorFilterMenu.add(new FilterButton("Green", ImageFilterType.ColorFilterType.REMOVE_GREEN));
+            colorFilterMenu.add(new FilterButton("Blue", ImageFilterType.ColorFilterType.REMOVE_BLUE));
+            filterMenu.add(colorFilterMenu);
+            editMenu.add(filterMenu);
             add(editMenu);
         }
     }
@@ -325,8 +341,7 @@ public class PhotoEditor {
         public void actionPerformed(ActionEvent e) {
             if (image == null) {
                 JOptionPane.showMessageDialog(mainFrame, "No image to save!");
-            }
-            else if (chooser.showSaveDialog(mainFrame) == JFileChooser.APPROVE_OPTION) {
+            } else if (chooser.showSaveDialog(mainFrame) == JFileChooser.APPROVE_OPTION) {
                 try {
                     ImageIO.write(image, "png", chooser.getSelectedFile());
                 } catch (IOException ex) {
@@ -359,6 +374,26 @@ public class PhotoEditor {
         @Override
         public void actionPerformed(ActionEvent e) {
             redo();
+        }
+    }
+
+    class FilterButton extends JMenuItem implements ActionListener {
+        private final ImageFilterType.ColorFilterType filterType;
+
+        public FilterButton(String name, ImageFilterType.ColorFilterType filterType) {
+            super(name);
+            this.filterType = filterType;
+            addActionListener(this);
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (image != null) {
+                image = ImageUtils.filterImage(image, filterType);
+                updateImageGraphics();
+                updateHistory();
+                canvas.repaint();
+            }
         }
     }
 
