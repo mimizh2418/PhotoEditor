@@ -8,6 +8,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Stack;
+import java.util.function.Function;
 
 public class PhotoEditor {
     public static final int DEFAULT_BRUSH_SIZE = 10;
@@ -131,6 +132,7 @@ public class PhotoEditor {
 
         @Override
         protected void paintComponent(Graphics g) {
+
             super.paintComponent(g);
             if (image != null) {
                 calculateImageSize();
@@ -140,6 +142,7 @@ public class PhotoEditor {
 
         class ScribbleMouseListener implements MouseListener, MouseMotionListener {
             private Point prev;
+            private boolean isHeld;
 
             private Point actualToImageCoords(Point actual) {
                 if (image == null) return null;
@@ -162,16 +165,19 @@ public class PhotoEditor {
                     imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                     imageGraphics.drawLine(imageCoords.x, imageCoords.y, imageCoords.x, imageCoords.y);
                     repaint();
+                    completeStroke();
                 }
             }
 
             @Override
-            public void mousePressed(MouseEvent e) {
-            }
+            public void mousePressed(MouseEvent e) {}
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                if (actualToImageCoords(e.getPoint()) != null) completeStroke();
+                if (isHeld && actualToImageCoords(e.getPoint()) != null) {
+                    completeStroke();
+                    isHeld = false;
+                }
             }
 
             @Override
@@ -186,6 +192,7 @@ public class PhotoEditor {
             public void mouseDragged(MouseEvent e) {
                 Point imageCoords = actualToImageCoords(e.getPoint());
                 if (image != null && imageCoords != null && prev != null) {
+                    isHeld = true;
                     imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                     imageGraphics.setColor(drawColor);
                     imageGraphics.drawLine(imageCoords.x, imageCoords.y, prev.x, prev.y);
@@ -264,13 +271,18 @@ public class PhotoEditor {
             editMenu.add(new RedoButton());
             editMenu.addSeparator();
             JMenu filterMenu = new JMenu("Filter image...");
-            filterMenu.add(new FilterButton("Grayscale", ImageFilterType.ColorFilterType.GRAYSCALE));
-            filterMenu.add(new FilterButton("Invert", ImageFilterType.ColorFilterType.INVERT));
-            filterMenu.add(new FilterButton("Shift colors", ImageFilterType.ColorFilterType.SHIFT));
+            filterMenu.add(new FilterButton("Grayscale", color -> {
+                int average = (color.getRed() + color.getGreen() + color.getBlue()) / 3;
+                return new Color(average, average, average);
+            }));
+            filterMenu.add(new FilterButton(
+                    "Invert", color -> new Color(255 - color.getRed(), 255 - color.getGreen(), 255 - color.getBlue())
+            ));
+            filterMenu.add(new FilterButton("Shift colors", color -> new Color(color.getBlue(), color.getRed(), color.getGreen())));
             JMenu colorFilterMenu = new JMenu("Filter color...");
-            colorFilterMenu.add(new FilterButton("Red", ImageFilterType.ColorFilterType.REMOVE_RED));
-            colorFilterMenu.add(new FilterButton("Green", ImageFilterType.ColorFilterType.REMOVE_GREEN));
-            colorFilterMenu.add(new FilterButton("Blue", ImageFilterType.ColorFilterType.REMOVE_BLUE));
+            colorFilterMenu.add(new FilterButton("Red", color -> new Color(0, color.getGreen(), color.getBlue())));
+            colorFilterMenu.add(new FilterButton("Green", color -> new Color(color.getRed(), 0, color.getBlue())));
+            colorFilterMenu.add(new FilterButton("Blue", color -> new Color(color.getRed(), color.getGreen(), 0)));
             filterMenu.add(colorFilterMenu);
             editMenu.add(filterMenu);
             add(editMenu);
@@ -378,18 +390,18 @@ public class PhotoEditor {
     }
 
     class FilterButton extends JMenuItem implements ActionListener {
-        private final ImageFilterType.ColorFilterType filterType;
+        private final Function<Color, Color> transformer;
 
-        public FilterButton(String name, ImageFilterType.ColorFilterType filterType) {
+        public FilterButton(String name, Function<Color, Color> transformer) {
             super(name);
-            this.filterType = filterType;
+            this.transformer = transformer;
             addActionListener(this);
         }
 
         @Override
         public void actionPerformed(ActionEvent e) {
             if (image != null) {
-                image = ImageUtils.filterImage(image, filterType);
+                image = ImageUtils.filterImage(image, transformer);
                 updateImageGraphics();
                 updateHistory();
                 canvas.repaint();

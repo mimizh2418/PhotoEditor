@@ -9,8 +9,7 @@ public class ImageUtils {
         return new BufferedImage(image.getColorModel(), image.copyData(null), image.getColorModel().isAlphaPremultiplied(), null);
     }
 
-    public static BufferedImage filterImage(BufferedImage image, ImageFilterType.ColorFilterType filterType) {
-        Function<Color, Color> transformer = filterType.transformer;
+    public static BufferedImage filterImage(BufferedImage image, Function<Color, Color> transformer) {
         BufferedImage filteredImage = copyImage(image);
         for (int i = 0; i < filteredImage.getWidth(); i++) {
             for (int j = 0; j < filteredImage.getHeight(); j++) {
