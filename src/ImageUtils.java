@@ -1,5 +1,6 @@
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.util.*;
 import java.util.function.Function;
 
 public class ImageUtils {
@@ -18,5 +19,28 @@ public class ImageUtils {
             }
         }
         return filteredImage;
+    }
+
+    public static BufferedImage fillRegion(BufferedImage image, Point startPoint, Color fillColor) {
+        BufferedImage newImage = copyImage(image);
+        iterFloodFill(newImage, startPoint, fillColor);
+        return newImage;
+    }
+
+    private static void iterFloodFill(BufferedImage image, Point startPoint, Color fillColor) {
+        if (startPoint.x < 0 || startPoint.x >= image.getWidth() || startPoint.y < 0 || startPoint.y >= image.getHeight()) {
+            throw new IllegalArgumentException("point coordinates out of bounds.");
+        }
+        int originalColor = image.getRGB(startPoint.x, startPoint.y);
+        Stack<Point> stack = new Stack<>();
+        stack.push(startPoint);
+        while (!stack.isEmpty()) {
+            Point p = stack.pop();
+            image.setRGB(p.x, p.y, fillColor.getRGB());
+            if (p.x > 0 && image.getRGB(p.x - 1, p.y) == originalColor) stack.push(new Point(p.x - 1, p.y));
+            if (p.x < image.getWidth() - 1 && image.getRGB(p.x + 1, p.y) == originalColor) stack.push(new Point(p.x + 1, p.y));
+            if (p.y > 0 && image.getRGB(p.x, p.y - 1) == originalColor) stack.push(new Point(p.x, p.y - 1));
+            if (p.y < image.getHeight() - 1 && image.getRGB(p.x, p.y + 1) == originalColor) stack.push(new Point(p.x, p.y + 1));
+        }
     }
 }

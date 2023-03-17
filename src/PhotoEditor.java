@@ -11,8 +11,20 @@ import java.util.Stack;
 import java.util.function.Function;
 
 public class PhotoEditor {
+    public enum EditorMode {
+        DRAW("Draw"),
+        FILL("Fill color"),
+        PICK("Color picker");
+
+        public final String name;
+        EditorMode(String name) {
+            this.name = name;
+        }
+    }
+
     public static final int DEFAULT_BRUSH_SIZE = 10;
     public static final Color DEFAULT_DRAW_COLOR = Color.BLACK;
+    public static final EditorMode DEFAULT_MODE = EditorMode.DRAW;
 
     private final Stack<BufferedImage> undoStack = new Stack<>();
     private final Stack<BufferedImage> redoStack = new Stack<>();
@@ -25,8 +37,16 @@ public class PhotoEditor {
 
     private int drawSize = DEFAULT_BRUSH_SIZE;
     private Color drawColor = DEFAULT_DRAW_COLOR;
+    private EditorMode currentMode = EditorMode.DRAW;
 
     public PhotoEditor() {
+        boolean badUI = false;
+        try {
+            UIManager.setLookAndFeel("com.sun.java.swing.plaf.windows.WindowsLookAndFeel"); // Credit: Willyam Spry
+        } catch (Exception e) {
+            badUI = true;
+            e.printStackTrace();
+        }
         mainFrame.setLayout(new BorderLayout());
         mainFrame.add(new ControlPanel(), BorderLayout.WEST);
         mainFrame.add(canvas, BorderLayout.CENTER);
@@ -34,6 +54,9 @@ public class PhotoEditor {
         mainFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         mainFrame.pack();
         mainFrame.setVisible(true);
+        if (badUI) {
+            JOptionPane.showMessageDialog(mainFrame, "Failed to properly load UI elements");
+        }
     }
 
     public void newImage(int width, int height) {
@@ -57,7 +80,7 @@ public class PhotoEditor {
                 redoStack.clear();
                 updateHistory();
             } else
-                JOptionPane.showMessageDialog(mainFrame, "Macrohard Draw cannot read this file. It is likely an unsupported file type.");
+                JOptionPane.showMessageDialog(mainFrame, "Macrohard Draw cannot read this file.\nIt is likely an unsupported file type.");
             if (canvas != null) canvas.repaint();
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(mainFrame, "ERROR: " + ex.getMessage());
@@ -132,7 +155,6 @@ public class PhotoEditor {
 
         @Override
         protected void paintComponent(Graphics g) {
-
             super.paintComponent(g);
             if (image != null) {
                 calculateImageSize();
@@ -154,19 +176,28 @@ public class PhotoEditor {
 
             private void completeStroke() {
                 prev = null;
+                repaint();
                 updateHistory();
             }
 
             @Override
             public void mouseClicked(MouseEvent e) {
                 Point imageCoords = actualToImageCoords(e.getPoint());
-                if (image != null && imageCoords != null) {
-                    imageGraphics.setColor(drawColor);
-                    imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    imageGraphics.drawLine(imageCoords.x, imageCoords.y, imageCoords.x, imageCoords.y);
-                    repaint();
-                    completeStroke();
+                if (imageCoords != null && image != null) {
+                    switch (currentMode) {
+                        case DRAW -> {
+                            imageGraphics.setColor(drawColor);
+                            imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                            imageGraphics.drawLine(imageCoords.x, imageCoords.y, imageCoords.x, imageCoords.y);
+                            completeStroke();
+                        }
+                        case FILL -> {
+                            image = ImageUtils.fillRegion(image, imageCoords, drawColor);
+                            completeStroke();
+                        }
+                    }
                 }
+
             }
 
             @Override
@@ -174,9 +205,11 @@ public class PhotoEditor {
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                if (isHeld && actualToImageCoords(e.getPoint()) != null) {
-                    completeStroke();
-                    isHeld = false;
+                if (currentMode == EditorMode.DRAW) {
+                    if (isHeld && actualToImageCoords(e.getPoint()) != null) {
+                        completeStroke();
+                        isHeld = false;
+                    }
                 }
             }
 
@@ -191,14 +224,16 @@ public class PhotoEditor {
             @Override
             public void mouseDragged(MouseEvent e) {
                 Point imageCoords = actualToImageCoords(e.getPoint());
-                if (image != null && imageCoords != null && prev != null) {
-                    isHeld = true;
-                    imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    imageGraphics.setColor(drawColor);
-                    imageGraphics.drawLine(imageCoords.x, imageCoords.y, prev.x, prev.y);
-                    prev = imageCoords;
-                    repaint();
-                } else prev = imageCoords;
+                if (currentMode == EditorMode.DRAW) {
+                    if (image != null && imageCoords != null && prev != null) {
+                        isHeld = true;
+                        imageGraphics.setStroke(new BasicStroke(drawSize, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                        imageGraphics.setColor(drawColor);
+                        imageGraphics.drawLine(imageCoords.x, imageCoords.y, prev.x, prev.y);
+                        prev = imageCoords;
+                        repaint();
+                    } else prev = imageCoords;
+                }
             }
 
             @Override
@@ -211,10 +246,16 @@ public class PhotoEditor {
         public ControlPanel() {
             setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
 
-            add(Box.createGlue());
-
-            add(new BrushSizeChooserPanel());
+            add(Box.createVerticalStrut(25));
+            ModeButton[] modes = new ModeButton[] {new ModeButton(EditorMode.DRAW), new ModeButton(EditorMode.FILL)};
+            ButtonGroup modeSelector = new ButtonGroup();
+            for (ModeButton button : modes) {
+                add(button);
+                modeSelector.add(button);
+            }
+            add(Box.createVerticalStrut(20));
             add(new BrushColorChooserButton());
+            add(new BrushSizeChooserPanel());
 
             add(Box.createGlue());
         }
@@ -258,6 +299,22 @@ public class PhotoEditor {
         }
     }
 
+    class ModeButton extends JToggleButton implements ActionListener {
+        private final EditorMode modeToSelect;
+
+        public ModeButton(EditorMode mode) {
+            super(mode.name);
+            addActionListener(this);
+            modeToSelect = mode;
+            if (mode == DEFAULT_MODE) setSelected(true);
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            currentMode = modeToSelect;
+        }
+    }
+
     class EditorMenuBar extends JMenuBar {
         public EditorMenuBar() {
             JMenu fileMenu = new JMenu("File");
@@ -272,7 +329,7 @@ public class PhotoEditor {
             editMenu.addSeparator();
             JMenu filterMenu = new JMenu("Filter image...");
             filterMenu.add(new FilterButton("Grayscale", color -> {
-                int average = (color.getRed() + color.getGreen() + color.getBlue()) / 3;
+                int average = (int) (0.299*color.getRed() + 0.587*color.getGreen() + 0.114*color.getBlue());
                 return new Color(average, average, average);
             }));
             filterMenu.add(new FilterButton(
@@ -280,10 +337,15 @@ public class PhotoEditor {
             ));
             filterMenu.add(new FilterButton("Shift colors", color -> new Color(color.getBlue(), color.getRed(), color.getGreen())));
             JMenu colorFilterMenu = new JMenu("Filter color...");
-            colorFilterMenu.add(new FilterButton("Red", color -> new Color(0, color.getGreen(), color.getBlue())));
-            colorFilterMenu.add(new FilterButton("Green", color -> new Color(color.getRed(), 0, color.getBlue())));
-            colorFilterMenu.add(new FilterButton("Blue", color -> new Color(color.getRed(), color.getGreen(), 0)));
+            colorFilterMenu.add(new FilterButton("Red", color -> new Color(color.getRed(), 0, 0)));
+            colorFilterMenu.add(new FilterButton("Green", color -> new Color(0, color.getGreen(), 0)));
+            colorFilterMenu.add(new FilterButton("Blue", color -> new Color(0, 0, color.getBlue())));
             filterMenu.add(colorFilterMenu);
+            JMenu removeColorMenu = new JMenu("Remove color component...");
+            removeColorMenu.add(new FilterButton("Red component", color -> new Color(0, color.getGreen(), color.getBlue())));
+            removeColorMenu.add(new FilterButton("Green component", color -> new Color(color.getRed(), 0, color.getBlue())));
+            removeColorMenu.add(new FilterButton("Blue component", color -> new Color(color.getRed(), color.getGreen(), 0)));
+            filterMenu.add(removeColorMenu);
             editMenu.add(filterMenu);
             add(editMenu);
         }
