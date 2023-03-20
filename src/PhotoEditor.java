@@ -327,7 +327,9 @@ public class PhotoEditor {
             editMenu.add(new UndoButton());
             editMenu.add(new RedoButton());
             editMenu.addSeparator();
+
             JMenu filterMenu = new JMenu("Filter image...");
+
             filterMenu.add(new FilterButton("Grayscale", color -> {
                 int average = (int) (0.299*color.getRed() + 0.587*color.getGreen() + 0.114*color.getBlue());
                 return new Color(average, average, average);
@@ -336,16 +338,26 @@ public class PhotoEditor {
                     "Invert", color -> new Color(255 - color.getRed(), 255 - color.getGreen(), 255 - color.getBlue())
             ));
             filterMenu.add(new FilterButton("Shift colors", color -> new Color(color.getBlue(), color.getRed(), color.getGreen())));
+
             JMenu colorFilterMenu = new JMenu("Filter color...");
             colorFilterMenu.add(new FilterButton("Red", color -> new Color(color.getRed(), 0, 0)));
             colorFilterMenu.add(new FilterButton("Green", color -> new Color(0, color.getGreen(), 0)));
             colorFilterMenu.add(new FilterButton("Blue", color -> new Color(0, 0, color.getBlue())));
             filterMenu.add(colorFilterMenu);
+
             JMenu removeColorMenu = new JMenu("Remove color component...");
             removeColorMenu.add(new FilterButton("Red component", color -> new Color(0, color.getGreen(), color.getBlue())));
             removeColorMenu.add(new FilterButton("Green component", color -> new Color(color.getRed(), 0, color.getBlue())));
             removeColorMenu.add(new FilterButton("Blue component", color -> new Color(color.getRed(), color.getGreen(), 0)));
             filterMenu.add(removeColorMenu);
+
+            JMenu advancedFilterMenu = new JMenu("Advanced...");
+            advancedFilterMenu.add(new FilterButton("Blur", Kernel.BLUR));
+            advancedFilterMenu.add(new FilterButton("Sharpen", Kernel.SHARPEN));
+            advancedFilterMenu.add(new FilterButton("Gaussian", Kernel.GAUSSIAN_BLUR));
+            advancedFilterMenu.add(new FilterButton("Laplacian", Kernel.LAPLACIAN));
+            filterMenu.add(advancedFilterMenu);
+
             editMenu.add(filterMenu);
             add(editMenu);
         }
@@ -453,20 +465,36 @@ public class PhotoEditor {
 
     class FilterButton extends JMenuItem implements ActionListener {
         private final Function<Color, Color> transformer;
+        private final Kernel kernel;
 
         public FilterButton(String name, Function<Color, Color> transformer) {
             super(name);
             this.transformer = transformer;
+            kernel = null;
+            addActionListener(this);
+        }
+
+        public FilterButton(String name, Kernel kernel) {
+            super(name);
+            this.kernel = kernel;
+            transformer = null;
             addActionListener(this);
         }
 
         @Override
         public void actionPerformed(ActionEvent e) {
             if (image != null) {
-                image = ImageUtils.filterImage(image, transformer);
-                updateImageGraphics();
-                updateHistory();
-                canvas.repaint();
+                if (transformer != null) {
+                    image = ImageUtils.transformColors(image, transformer);
+                    updateImageGraphics();
+                    updateHistory();
+                    canvas.repaint();
+                } else if (kernel != null) {
+                    image = Kernel.applyFilter(image, kernel);
+                    updateImageGraphics();
+                    updateHistory();
+                    canvas.repaint();
+                }
             }
         }
     }
